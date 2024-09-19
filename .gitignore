@@ -1,4 +1,5 @@
 conda_venv/
+all_data/
 
 # Files to ignore: PDFs can be downloaded with `make` for every included text
 .DS_Store
