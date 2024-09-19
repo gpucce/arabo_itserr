@@ -1,4 +1,5 @@
 import json
+from itertools import islice
 
 def get_keywords(text=None):
     # some code here
@@ -21,3 +22,12 @@ def contains_arabic(text):
         if any(start <= ord(char) <= end for start, end in arabic_ranges):
             return True
     return False
+
+def batched(iterable, n):
+    # batched('ABCDEFG', 3) → ABC DEF G
+    if n < 1:
+        raise ValueError('n must be at least one')
+    iterator = iter(iterable)
+    while batch := tuple(islice(iterator, n)):
+        yield batch
+

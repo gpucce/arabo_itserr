@@ -1,0 +1,4 @@
+
+
+# make pylint ingore some repos
+ignore=conda_venv,all_data,__pycache__
