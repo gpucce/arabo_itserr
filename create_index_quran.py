@@ -1,4 +1,5 @@
 from pathlib import Path
+import os
 import json
 import faiss
 from tqdm.auto import tqdm
@@ -12,16 +13,14 @@ import numpy as np
 from utils import get_keywords, contains_arabic, batched
 from torch.nn.functional import cosine_similarity
 
+os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 
 def compute_scores(data_path, ids_to_ignore=[]):
     d = Path(data_path)
-    all_d = d.glob("./**/*-ara1")
+    all_d = d.glob("./*-ara*.txt")
     all_texts = {}
     for i in all_d:
-        try:
-            all_texts[str(i)] = oimdp.parse(i.read_text())
-        except:
-            continue
+        all_texts[str(i)] = oimdp.parse(i.read_text())
 
     count = 0
     token_line_count = 0
@@ -35,7 +34,6 @@ def compute_scores(data_path, ids_to_ignore=[]):
     hidden_states_index = faiss.IndexIVFPQ(
         hidden_states_quantizer, d, nlist, faiss_m, 8) # 8 specifies that each sub-vector is encoded as 8 bits
 
-    all_scores = {kwd["keyword"]:{} for kwd in kwds}
     all_clean_texts = {}
     for name, text in tqdm(all_texts.items(), total=len(all_texts)):
         all_clean_texts[name] = {"samples": [], "metadata": {}}
@@ -43,7 +41,6 @@ def compute_scores(data_path, ids_to_ignore=[]):
         all_clean_texts[name]["metadata"]["first_token"] = input_ids_index.ntotal
         for text_chunk in text.content:
             if not isinstance(text_chunk, oimdp.structures.Paragraph):
-                all_clean_texts[name]["samples"]
                 new_sample = []
                 for h in str(text_chunk).split():
                     if contains_arabic(h):
@@ -55,9 +52,9 @@ def compute_scores(data_path, ids_to_ignore=[]):
             count += 1
         all_clean_texts[name]["metadata"]["last_line"] = count - 1
 
-        skipped_count = 0
+        count_skipped = 0
         with torch.inference_mode():
-            for batch_infos in batched(all_clean_texts[name]["samples"], 512):
+            for batch_infos in batched(all_clean_texts[name]["samples"], 1024):
                 batch = [sample["text"] for sample in batch_infos]
                 tokenized_batch = tok(batch, return_tensors="pt", padding=True, truncation=True, max_length=256, return_special_tokens_mask=True).to("cuda")
                 mask = tokenized_batch.pop("special_tokens_mask").bool()
@@ -72,40 +69,19 @@ def compute_scores(data_path, ids_to_ignore=[]):
                 hidden_states = m(**tokenized_batch).last_hidden_state
                 vectors = hidden_states[~mask].reshape(-1, hidden_states.shape[-1]).cpu().numpy()
                 vectors /= np.linalg.norm(vectors, axis=-1, keepdims=True)
-
                 if vectors.shape[0] > 256:
                     hidden_states_index.train(vectors)
                 else:
-                    print("##############", vectors.shape)
-                    skipped_count += 1
+                    print("#################", vectors.shape)
+                    count_skipped += 1
 
-                if skipped_count > 10:
+                if count_skipped > 10:
                     raise ValueError("Too many samples skipped")
-
                 hidden_states_index.add(vectors)
-
-                for kwd in kwds:
-                    keyword = kwd["keyword"]
-                    sims = cosine_similarity(
-                        hidden_states.reshape(-1, hidden_states.shape[-1]), kwd["emb"], dim=-1
-                    ).cpu().numpy()
-                    for input_id, sim_score in zip(tokenized_batch.input_ids.reshape(-1), sims):
-                        sim_score = sim_score.item()
-                        if input_id in ids_to_ignore:
-                            continue
-                        input_id = tok.convert_ids_to_tokens(input_id.cpu().tolist())
-                        if input_id in all_scores[keyword]:
-                            all_scores[keyword][input_id].append(sim_score)
-                        else:
-                            all_scores[keyword][input_id] = [sim_score]
 
         all_clean_texts[name]["metadata"]["last_token"] = input_ids_index.ntotal - 1
 
-    for k, w in all_scores.items():
-        for i, j in w.items():
-            w[i] = sum(j) / len(j)
-
-    return all_scores, input_ids_index, hidden_states_index, all_clean_texts
+    return input_ids_index, hidden_states_index, all_clean_texts
 
 if __name__ == "__main__":
 
@@ -120,44 +96,27 @@ if __name__ == "__main__":
 
     ids_to_ignore = [tok.convert_tokens_to_ids(i) for i in tok.special_tokens_map.values()]
 
-    kwds = get_keywords()
-    with torch.inference_mode():
-        for kwd in tqdm(kwds):
-            kwd["emb"] = m(**tok(kwd["sentence"], return_tensors="pt").to("cuda"))["last_hidden_state"][0, 1]
-
-    data_paths = sorted(list(Path("all_data").iterdir()), key=str)
+    data_paths = sorted(list(Path("all_data/fonti_arabo_wp8").iterdir()), key=str)
+    data_paths = [i for i in data_paths if i.is_dir() if i.name != "hadith_collections"]
     if IS_TEST:
         data_paths = data_paths[:10]
     for data_path in data_paths:
 
-        out_path = Path("out_data") / data_path.name
+        out_path = Path("wp8_out_data") / data_path.name
         if IS_TEST:
-            out_path = Path("test_out_data") / data_path.name
+            out_path = Path("test_wp8_out_data") / data_path.name
         out_path.mkdir(exist_ok=True, parents=True)
 
         print(out_path)
         if Path(out_path).exists() and not IS_TEST and len(list(Path(out_path).iterdir())) > 0:
             continue
-        out_path = str(out_path / "all_scores.csv")
-        all_scores, input_ids_index, hidden_states_index, all_clean_texts = compute_scores(
-            (data_path / "data").resolve(),
+        out_path = str(out_path / "clean_texts.csv")
+        input_ids_index, hidden_states_index, all_clean_texts = compute_scores(
+            data_path.resolve(),
             ids_to_ignore=ids_to_ignore)
 
-        # Save the scores
         with open(out_path.replace(".csv", ".json"), "w") as f:
-            json.dump(all_scores, f)
-
-        with open(out_path.replace("all_scores", "clean_texts").replace(".csv", ".json"), "w") as f:
             json.dump(all_clean_texts, f)
-
-        # Create and save the dataframe
-        df = (pd.DataFrame
-              .from_dict(all_scores)
-              .sort_values(list(all_scores.keys())[0], ascending=False)
-              .reset_index())
-
-        df = df.loc[~df.loc[:, "index"].str.contains("##"), :]
-        df.to_csv(out_path, index=False)
 
         # Save the indexes
         faiss.write_index(input_ids_index, out_path.replace(".csv", "_input_ids_index.faiss"))
