@@ -12,28 +12,39 @@ import numpy as np
 from utils import get_keywords, contains_arabic, batched
 from torch.nn.functional import cosine_similarity
 
+def faiss_encode(vectors, quantizer, index, train=True):
+    if quantizer is not None:
+        if train and vectors.shape[0] > 256:
+            quantizer.train(vectors)
+        quantizer.add(vectors)
+    else:
+        index.add(vectors)
 
 def compute_scores(data_path, ids_to_ignore=[]):
     d = Path(data_path)
-    all_d = d.glob("./**/*-ara1")
+    all_d = list(d.glob("./**/*-ara1"))
     all_texts = {}
+    count = 0
     for i in all_d:
         try:
             all_texts[str(i)] = oimdp.parse(i.read_text())
+            count += 1
         except:
             continue
+        if IS_TEST and count > 10:
+            break
 
     count = 0
     token_line_count = 0
     input_ids_index = faiss.IndexFlatIP(1)
-    # hidden_states_index = faiss.IndexFlatIP(768)
 
     d = 768
-    nlist = 100
-    faiss_m = 8
-    hidden_states_quantizer = faiss.IndexFlatL2(d)
-    hidden_states_index = faiss.IndexIVFPQ(
-        hidden_states_quantizer, d, nlist, faiss_m, 8) # 8 specifies that each sub-vector is encoded as 8 bits
+    # nlist = 100
+    # faiss_m = 32
+    hidden_states_index = faiss.IndexFlatIP(d)
+    hidden_states_quantized_index = None
+    # hidden_states_quantized_index = faiss.IndexIVFPQ(
+    #     hidden_states_index, d, nlist, faiss_m, 8) # 8 specifies that each sub-vector is encoded as 8 bits
 
     all_scores = {kwd["keyword"]:{} for kwd in kwds}
     all_clean_texts = {}
@@ -41,25 +52,34 @@ def compute_scores(data_path, ids_to_ignore=[]):
         all_clean_texts[name] = {"samples": [], "metadata": {}}
         all_clean_texts[name]["metadata"]["first_line"] = count
         all_clean_texts[name]["metadata"]["first_token"] = input_ids_index.ntotal
+        new_sample = []
         for text_chunk in text.content:
             if not isinstance(text_chunk, oimdp.structures.Paragraph):
-                all_clean_texts[name]["samples"]
-                new_sample = []
+
+                try:
+                    str(text_chunk)
+                except:
+                    count += 1
+                    continue
+
                 for h in str(text_chunk).split():
                     if contains_arabic(h):
                         new_sample.append(h)
-                all_clean_texts[name]["samples"].append({
-                    "count": count,
-                    "text": " ".join(new_sample),
-                })
+            else:
+                if not len(new_sample) == 0:
+                    all_clean_texts[name]["samples"].append({"count": count, "text": " ".join(new_sample),})
+                    new_sample = []
             count += 1
         all_clean_texts[name]["metadata"]["last_line"] = count - 1
 
-        skipped_count = 0
+        count_skipped = 0
         with torch.inference_mode():
-            for batch_infos in batched(all_clean_texts[name]["samples"], 512):
+            vectors = None
+            for batch_infos in batched(all_clean_texts[name]["samples"], 1024):
                 batch = [sample["text"] for sample in batch_infos]
-                tokenized_batch = tok(batch, return_tensors="pt", padding=True, truncation=True, max_length=256, return_special_tokens_mask=True).to("cuda")
+                tokenized_batch = tok(
+                    batch, return_tensors="pt", padding=True, truncation=True,
+                    max_length=512, return_special_tokens_mask=True).to("cuda")
                 mask = tokenized_batch.pop("special_tokens_mask").bool()
                 input_ids_index.add(
                     tokenized_batch.input_ids[~mask].cpu().numpy().reshape(-1, 1))
@@ -69,41 +89,33 @@ def compute_scores(data_path, ids_to_ignore=[]):
                     token_line_count += tokens[~tokens_mask].shape[0]
                     sample["last_token"] = token_line_count
 
-                hidden_states = m(**tokenized_batch).last_hidden_state
-                vectors = hidden_states[~mask].reshape(-1, hidden_states.shape[-1]).cpu().numpy()
-                vectors /= np.linalg.norm(vectors, axis=-1, keepdims=True)
-
-                if vectors.shape[0] > 256:
-                    hidden_states_index.train(vectors)
+                out = m(**tokenized_batch)
+                pooler_output = out.pooler_output.cpu().numpy()
+                pooler_output /= np.linalg.norm(pooler_output, axis=-1, keepdims=True)
+                if vectors is None:
+                    vectors = pooler_output
                 else:
-                    print("##############", vectors.shape)
-                    skipped_count += 1
+                    vectors = np.concatenate((vectors, pooler_output), axis=0)
 
-                if skipped_count > 10:
-                    raise ValueError("Too many samples skipped")
+                if vectors.shape[0] > 10_000:
+                    faiss_encode(vectors, hidden_states_quantized_index, hidden_states_index)
+                    vectors = None
+                else:
+                    print("#################", vectors.shape)
+                    count_skipped += 1
 
-                hidden_states_index.add(vectors)
+                # if hidden_states_quantized_index is not None and count_skipped > 10:
+                #     raise ValueError("Too many samples skipped")
 
-                for kwd in kwds:
-                    keyword = kwd["keyword"]
-                    sims = cosine_similarity(
-                        hidden_states.reshape(-1, hidden_states.shape[-1]), kwd["emb"], dim=-1
-                    ).cpu().numpy()
-                    for input_id, sim_score in zip(tokenized_batch.input_ids.reshape(-1), sims):
-                        sim_score = sim_score.item()
-                        if input_id in ids_to_ignore:
-                            continue
-                        input_id = tok.convert_ids_to_tokens(input_id.cpu().tolist())
-                        if input_id in all_scores[keyword]:
-                            all_scores[keyword][input_id].append(sim_score)
-                        else:
-                            all_scores[keyword][input_id] = [sim_score]
+            if vectors is not None:
+                faiss_encode(vectors, hidden_states_quantized_index, hidden_states_index)
+                vectors = None
 
         all_clean_texts[name]["metadata"]["last_token"] = input_ids_index.ntotal - 1
 
-    for k, w in all_scores.items():
-        for i, j in w.items():
-            w[i] = sum(j) / len(j)
+    # for k, w in all_scores.items():
+    #     for i, j in w.items():
+    #         w[i] = sum(j) / len(j)
 
     return all_scores, input_ids_index, hidden_states_index, all_clean_texts
 
@@ -125,14 +137,16 @@ if __name__ == "__main__":
         for kwd in tqdm(kwds):
             kwd["emb"] = m(**tok(kwd["sentence"], return_tensors="pt").to("cuda"))["last_hidden_state"][0, 1]
 
-    data_paths = sorted(list(Path("all_data").iterdir()), key=str)
+    data_paths_string = [f"0{600 + i*25}AH" for i in range(12)]
+    data_paths = sorted([i for i in Path("all_data").iterdir() if i.name in data_paths_string], key=str)
+
     if IS_TEST:
         data_paths = data_paths[:10]
     for data_path in data_paths:
 
-        out_path = Path("out_data") / data_path.name
+        out_path = Path("arabic_out_data") / data_path.name
         if IS_TEST:
-            out_path = Path("test_out_data") / data_path.name
+            out_path = Path("test_arabic_out_data") / data_path.name
         out_path.mkdir(exist_ok=True, parents=True)
 
         print(out_path)

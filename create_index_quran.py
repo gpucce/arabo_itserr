@@ -28,7 +28,7 @@ def compute_scores(data_path, ids_to_ignore=[]):
         all_d = dp.glob("./*-ara*.txt")
     else:
         all_d = dp.glob("./*/*-ara*.txt")
-    
+
     all_texts = {}
     for idx, i in enumerate(all_d):
         all_texts[str(i)] = oimdp.parse(i.read_text())
