@@ -161,10 +161,13 @@ if __name__ == "__main__":
         #         """)
 
         with gr.Row():
+             with gr.Column():
+                # passage = gr.Textbox(label="Passage to search", placeholder=test_hadith, value=test_hadith)
+                passage =  gr.MultimodalTextbox(label="Passage or speech to search", placeholder=test_hadith, value=test_hadith,
+                                     sources='upload', file_types=["audio"])
             with gr.Column():
-                passage = gr.Textbox(label="Passage to search", placeholder=test_hadith, value=test_hadith)
-            doc = gr.Dropdown(label="Document", choices=docs, value=docs[0])
-        n_samples = gr.Number(label="Number of samples to show", interactive=True, value=5, maximum=10)
+                doc = gr.Dropdown(label="Document", choices=docs, value=docs[0])
+                n_samples = gr.Number(label="Number of samples to show", interactive=True, value=5, maximum=10)
         b1 = gr.Button("Search")
         with gr.Tab("Text Output"):
             out = gr.Markdown()
