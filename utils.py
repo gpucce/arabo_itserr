@@ -6,7 +6,7 @@ import unicodedata
 import soundfile as sf
 from itertools import islice
 from transformers import VitsModel, AutoTokenizer, AutoModelForSpeechSeq2Seq, pipeline,AutoProcessor
-
+import numpy as np
 
 def get_keywords(text=None):
     # some code here
