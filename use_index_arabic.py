@@ -11,7 +11,7 @@ import torch
 import numpy as np
 import gradio as gr
 
-
+from  utils import generate_audio, transcribe
 
 def search_the_index(passage, doc="quran", n_samples=5):
 
@@ -131,7 +131,11 @@ if __name__ == "__main__":
 
 
     def search_the_index_gradio(passage, doc, n_samples):
-        out = search_the_index(passage, doc, n_samples)
+        if len(passage['files']) == 1:
+            passage = transcribe(passage['files'][0])
+            out = search_the_index(passage, doc, n_samples)
+        else:
+            out = search_the_index(passage['text'], doc, n_samples)
         recovered = out["recovered"][:n_samples]
         doc_names = out["documents"][:n_samples]
         similarities = out["similarities"][:n_samples]
@@ -141,6 +145,8 @@ if __name__ == "__main__":
         ]
         return "\n\n".join(out_lines)
 
+    audio_list = []
+    
     demo = gr.Blocks(theme=gr.themes.Soft())
 
     gr.set_static_paths("/home/gpucce/Repos/arabo_panzeca/assets")
@@ -158,10 +164,16 @@ if __name__ == "__main__":
             with gr.Column():
                 passage = gr.Textbox(label="Passage to search", placeholder=test_hadith, value=test_hadith)
             doc = gr.Dropdown(label="Document", choices=docs, value=docs[0])
-        n_samples = gr.Number(label="Number of samples to show", interactive=True, value=5)
+        n_samples = gr.Number(label="Number of samples to show", interactive=True, value=5, maximum=10)
         b1 = gr.Button("Search")
-        out = gr.Markdown()
-        b1.click(search_the_index_gradio, inputs=[passage, doc, n_samples], outputs=out)
+        with gr.Tab("Text Output"):
+            out = gr.Markdown()
+            audio_list.append(out)
+        with gr.Tab("Speech Output"):
+            for i in range(10):
+                out_a = gr.Audio(visible=False)
+                audio_list.append(out_a)
+        b1.click(search_the_index_gradio, inputs=[passage, doc, n_samples], outputs=audio_list)
 
         with gr.Row():
             gr.Image("/home/gpucce/Repos/arabo_panzeca/assets/itserr_logo.png", width=100, height=100)
