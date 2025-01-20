@@ -165,10 +165,10 @@ if __name__ == "__main__":
     m.to("cuda")
 
 
-    def search_the_index_gradio( passage, doc, n_samples):
+    def search_the_index_gradio(passage, doc, n_samples):
         print(passage)
         if len(passage['files']) == 1:
-            passage = transcribe(audio[1])
+            passage = transcribe(passage["files"][0])
             out = search_the_index(passage, doc, n_samples)
         else:
             out = search_the_index(passage['text'], doc, n_samples)
@@ -221,4 +221,4 @@ if __name__ == "__main__":
             # gr.Image("/home/gpucce/Repos/arabo_panzeca/assets/itserr_logo.png", width=100, height=100)
             # gr.Image("/home/gpucce/Repos/arabo_panzeca/assets/nextgen_eu_logo.png", width=100, height=100)
 # server_port=48725, allowed_paths=["/"],
-    demo.launch(server_name="0.0.0.0", share=True, )
+    demo.launch(server_name="0.0.0.0", server_port=48725, allowed_paths=["/"])
