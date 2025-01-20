@@ -143,7 +143,9 @@ if __name__ == "__main__":
             f"### Text: {recovered}\n - Similarity {sim:.4f}\n - URL: {doc_name}"
             for sim, doc_name, recovered in zip(similarities, doc_names, recovered)
         ]
-        return "\n\n".join(out_lines)
+        audios = [gr.Audio(visible=True, value= generate_audio(x), type="numpy", label=f"Sample {i+1}") for i,x in enumerate(recovered)]
+        non_audios = [gr.Audio(visible=False) for _ in range(10-len(recovered))] # For handling dynamic rendering
+        return ["\n\n".join(out_lines)] + audios + non_audios
 
     audio_list = []
     
@@ -161,7 +163,7 @@ if __name__ == "__main__":
         #         """)
 
         with gr.Row():
-             with gr.Column():
+            with gr.Column():
                 # passage = gr.Textbox(label="Passage to search", placeholder=test_hadith, value=test_hadith)
                 passage =  gr.MultimodalTextbox(label="Passage or speech to search", placeholder=test_hadith, value=test_hadith,
                                      sources='upload', file_types=["audio"])
