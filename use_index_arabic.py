@@ -161,7 +161,7 @@ if __name__ == "__main__":
         #         """)
 
         with gr.Row():
-             with gr.Column():
+            with gr.Column():
                 # passage = gr.Textbox(label="Passage to search", placeholder=test_hadith, value=test_hadith)
                 passage =  gr.MultimodalTextbox(label="Passage or speech to search", placeholder=test_hadith, value=test_hadith,
                                      sources='upload', file_types=["audio"])
