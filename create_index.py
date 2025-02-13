@@ -31,7 +31,7 @@ def compute_scores(data_path, ids_to_ignore=[]):
             count += 1
         except:
             continue
-        if IS_TEST and count > 10:
+        if IS_TEST and count > 50:
             break
 
     count = 0
@@ -141,7 +141,7 @@ if __name__ == "__main__":
     data_paths = sorted([i for i in Path("all_data").iterdir() if i.name in data_paths_string], key=str)
 
     if IS_TEST:
-        data_paths = data_paths[:10]
+        data_paths = data_paths[:50]
     for data_path in data_paths:
 
         out_path = Path("arabic_out_data") / data_path.name

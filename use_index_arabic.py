@@ -67,9 +67,6 @@ def search_the_index(passage, doc="quran", n_samples=5):
             url += ".".join(doc_name.split('.')[:2]) + "/"
             url += doc_name.replace(".txt", ".mARkdown")
 
-            # test_response = requests.get(url)
-            # if test_response.status_code == 404:
-            #     url = url.replace(".mARkdown", "")
             print(url)
             if not os.path.exists(
                 url
@@ -118,7 +115,7 @@ if __name__ == "__main__":
     IS_TEST = len(sys.argv) > 1 and sys.argv[1] == "test"
 
     test_hadith = """الثاتي منسوب إلى ثات بن زيد بن رعين، تمام النسب يأتي ذكره. منهم إبراهيم بن زيد بن مرة بن شرحبيل بن حجية بن زكة بن عمرو بن شؤحبيل بن هرم بن آزاذ بن شرحبيل بن حمرة بن ذي يكلان بن ثابت بن زيد بن رعين الرعيني الثاتي المصري أبو خزيمة، ولي القضاء بمصر بعد ان عرضه الأمير أبو عون عبد الملك بن يزيد علي السيف، وقبل ذلك كان يعمل الأرسان وكان من العابدين الزاهدين، حدث عن يزيد بن أبي حبيب؛ روى عنه المفضل ابن فضالة، وخالد بن حميد، وجرير بن حازم، وغيرهم."""
-
+    test_hadith = {"text": test_hadith, "files": ["/home/gpucce/Repos/arabo_panzeca/test.mp3"]}
     data_path = "arabic_out_data" if not IS_TEST else "test_arabic_out_data"
     docs = [i for i in Path(data_path).iterdir() if i.is_dir() and any(i.iterdir())]
     docs = sorted(["/".join(str(i).split("/")[-2 if "hadith" in str(i) else -1:]) for i in docs])
@@ -143,12 +140,12 @@ if __name__ == "__main__":
             f"### Text: {recovered}\n - Similarity {sim:.4f}\n - URL: {doc_name}"
             for sim, doc_name, recovered in zip(similarities, doc_names, recovered)
         ]
-        audios = [gr.Audio(visible=True, value= generate_audio(x), type="numpy", label=f"Sample {i+1}") for i,x in enumerate(recovered)]
+        audios = [gr.Audio(visible=True, value=generate_audio(x), type="numpy", label=f"Sample {i+1}") for i,x in enumerate(recovered)]
         non_audios = [gr.Audio(visible=False) for _ in range(10-len(recovered))] # For handling dynamic rendering
         return ["\n\n".join(out_lines)] + audios + non_audios
 
     audio_list = []
-    
+
     demo = gr.Blocks(theme=gr.themes.Soft())
 
     gr.set_static_paths("/home/gpucce/Repos/arabo_panzeca/assets")
